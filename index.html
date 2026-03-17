@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0D0D0F">
+<title>AI 视频提示词工坊</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0D0D0F;overflow:hidden;-webkit-user-select:none;user-select:none}
+  textarea,input{-webkit-user-select:text;user-select:text}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+  @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  ::-webkit-scrollbar{width:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useCallback,useEffect,useRef} = React;
+
+const DEFAULT_CATEGORIES = [
+  {id:"subject",label:"主体与动作",icon:"🎭",color:"#E8655A",
+    tags:["一个年轻女人","一个男人","一个小孩","一位老人","一对情侣","一只猫","一只鸟","一群人","一辆汽车","一艘船","站立不动","缓缓行走","奔跑","跳舞","回头望","坐在椅子上","骑自行车","漂浮在空中","从远处走来","渐渐消失"]},
+  {id:"scene",label:"场景环境",icon:"🏔",color:"#4A9B7F",
+    tags:["城市街道","海边沙滩","茂密森林","雪山之巅","沙漠荒野","日式庭院","欧洲古堡","赛博朋克都市","太空星际","水下世界","室内咖啡厅","废弃工厂","樱花小路","雨中巷弄","屋顶天台","春天","夏天","秋天","冬天"]},
+  {id:"lighting",label:"光线色调",icon:"💡",color:"#D4A853",
+    tags:["金色晨光","柔和自然光","落日余晖","月光照耀","霓虹灯光","逆光剪影","侧光","顶光","烛光摇曳","闪电照亮","暖色调","冷色调","高对比度","低饱和度","莫兰迪色系","光影交错","丁达尔效应","体积光","柔光滤镜","阴暗低调"]},
+  {id:"camera",label:"镜头运动",icon:"🎬",color:"#6B7FD7",
+    tags:["特写 close-up","中景 medium shot","远景 wide shot","全景 panoramic","航拍俯瞰 aerial shot","低角度仰拍","肩上镜头 over-the-shoulder","跟踪镜头 tracking shot","环绕拍摄 orbit shot","推进 zoom in","拉远 zoom out","慢动作 slow motion","延时摄影 timelapse","手持晃动 handheld","稳定器平滑移动","一镜到底 long take","快速剪辑","旋转镜头","穿越镜头","第一人称视角 POV"]},
+  {id:"style",label:"视觉风格",icon:"🎨",color:"#A862C4",
+    tags:["电影感 cinematic","纪录片风格","MV风格","广告大片","35mm胶片质感","8mm复古胶片","黑白影像","赛博朋克","吉卜力动画","皮克斯3D风格","日系动漫","水彩手绘","油画质感","极简主义","超现实主义","蒸汽波 vaporwave","暗黑哥特","田园牧歌","未来科幻","中国水墨风"]},
+  {id:"mood",label:"情绪氛围",icon:"✨",color:"#CF6E8A",
+    tags:["宁静祥和","温暖治愈","浪漫唯美","梦幻迷离","忧郁感伤","紧张悬疑","震撼史诗","神秘诡异","欢乐活泼","孤独寂寥","充满希望","压迫窒息","自由奔放","庄严肃穆","轻松惬意","怀旧复古","空灵飘渺","热血沸腾","平静如水","末日荒凉"]},
+];
+
+const PRESETS = [
+  {name:"电影感城市夜景",tags:["一个年轻女人","缓缓行走","城市街道","霓虹灯光","冷色调","跟踪镜头 tracking shot","电影感 cinematic","孤独寂寥"]},
+  {name:"自然风光航拍",tags:["茂密森林","金色晨光","体积光","航拍俯瞰 aerial shot","慢动作 slow motion","电影感 cinematic","宁静祥和","震撼史诗"]},
+  {name:"日系治愈动画",tags:["一个小孩","樱花小路","春天","柔和自然光","暖色调","中景 medium shot","吉卜力动画","温暖治愈"]},
+  {name:"赛博朋克未来",tags:["一群人","赛博朋克都市","霓虹灯光","高对比度","低角度仰拍","赛博朋克","紧张悬疑"]},
+];
+
+const DEFAULT_FIXED_PRESETS = [
+  {id:"fp_demo1",name:"3D CGI 写实风格",
+    content:"建模与渲染引擎：采用高精度的3D CGI（计算机生成图像）渲染技术。材质表现遵循PBR（基于物理的渲染）标准，对光线的反射、折射（如头发的光泽、皮肤的次表面散射）处理方式一致。角色面部审美特征：人物面部比例高度同源。采用了\u201C写实物理材质+二次元夸张比例\u201D的混合设计（即大眼睛、小鼻尖、精致且无瑕疵的平滑肌肤）。这种特征常见于当前的3D动漫、游戏CG或BJD（球体关节人形）人偶，呈现出强烈的\u201C精致人造物\u201D质感。镜头语言与构图：采用了标准的单人肖像构图，并使用了强烈的浅景深（背景虚化）摄影技巧。"},
+];
+
+const COLOR_OPTIONS = ["#E8655A","#4A9B7F","#D4A853","#6B7FD7","#A862C4","#CF6E8A","#5BA8C8","#8BC34A","#FF8A65","#78909C"];
+const ICON_OPTIONS = ["🎭","🏔","💡","🎬","🎨","✨","🎵","🌊","🔥","🌙","⚡","🎯","🧩","🎪","💎","🚀","🌸","🎤","📷","🖌"];
+
+function loadJSON(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+}
+function saveJSON(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+/* ── Toast notification ── */
+function Toast({message, visible}) {
+  if (!visible) return null;
+  return (
+    <div style={{
+      position:"fixed",bottom:32,left:"50%",transform:"translateX(-50%)",zIndex:9999,
+      padding:"12px 24px",borderRadius:10,background:"rgba(74,155,127,0.95)",
+      color:"#fff",fontSize:13,fontWeight:600,fontFamily:"'Noto Sans SC',sans-serif",
+      boxShadow:"0 8px 32px rgba(0,0,0,0.4)",animation:"slideUp 0.25s ease",
+      backdropFilter:"blur(8px)",
+    }}>{message}</div>
+  );
+}
+
+/* ── Modal ── */
+function Modal({open, onClose, title, children, width=460}) {
+  if (!open) return null;
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width,maxWidth:"92vw",maxHeight:"85vh",overflowY:"auto",background:"#1A1A1E",borderRadius:16,border:"1px solid rgba(255,255,255,0.08)",boxShadow:"0 24px 80px rgba(0,0,0,0.6)",padding:"24px 28px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <h3 style={{margin:0,fontSize:16,fontWeight:600,color:"#E8E6E1"}}>{title}</h3>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.06)",border:"none",color:"#888",width:30,height:30,borderRadius:8,cursor:"pointer",fontSize:16}}>×</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const inp={width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#E8E6E1",fontSize:13,outline:"none",fontFamily:"'Noto Sans SC',sans-serif",boxSizing:"border-box"};
+const lbl={fontSize:12,color:"#888",marginBottom:6,display:"block",fontWeight:500};
+const btnP=(c="#E8655A")=>({padding:"10px 22px",borderRadius:10,border:"none",background:c,color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Noto Sans SC',sans-serif"});
+const btnG={padding:"10px 18px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#888",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans SC',sans-serif"};
+
+function PromptBuilder() {
+  const [categories, setCategories] = useState(()=>loadJSON("pb-categories",DEFAULT_CATEGORIES));
+  const [selected, setSelected] = useState([]);
+  const [customText, setCustomText] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [activeCategory, setActiveCategory] = useState(null);
+  const [savedPresets, setSavedPresets] = useState(()=>loadJSON("pb-presets",[]));
+  const [presetName, setPresetName] = useState("");
+  const [showSaveInput, setShowSaveInput] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+
+  const [fixedPresets, setFixedPresets] = useState(()=>loadJSON("pb-fixed-presets",DEFAULT_FIXED_PRESETS));
+  const [activeFixedPresets, setActiveFixedPresets] = useState([]);
+  const [hoveredFP, setHoveredFP] = useState(null);
+  const [addFPModal, setAddFPModal] = useState(false);
+  const [editFPModal, setEditFPModal] = useState(null);
+  const [fpForm, setFpForm] = useState({name:"",content:""});
+  const [fpViewModal, setFpViewModal] = useState(null);
+
+  const [addTagModal, setAddTagModal] = useState(null);
+  const [editTagModal, setEditTagModal] = useState(null);
+  const [addCatModal, setAddCatModal] = useState(false);
+  const [editCatModal, setEditCatModal] = useState(null);
+  const [newTagText, setNewTagText] = useState("");
+  const [editTagText, setEditTagText] = useState("");
+  const [batchTagText, setBatchTagText] = useState("");
+  const [newCat, setNewCat] = useState({label:"",icon:"🎯",color:"#5BA8C8"});
+  const [editCat, setEditCat] = useState({label:"",icon:"",color:""});
+  const [presetTab, setPresetTab] = useState("quick");
+
+  // Toast
+  const [toast, setToast] = useState({message:"",visible:false});
+  const showToast = (msg) => { setToast({message:msg,visible:true}); setTimeout(()=>setToast({message:"",visible:false}), 2200); };
+
+  // Settings menu
+  const [showSettings, setShowSettings] = useState(false);
+
+  // File input ref for import
+  const fileInputRef = useRef(null);
+
+  // Auto-save
+  useEffect(()=>{saveJSON("pb-categories",categories);},[categories]);
+  useEffect(()=>{saveJSON("pb-presets",savedPresets);},[savedPresets]);
+  useEffect(()=>{saveJSON("pb-fixed-presets",fixedPresets);},[fixedPresets]);
+
+  const toggleTag = useCallback((tag)=>{
+    if(editMode) return;
+    setSelected(p=>p.includes(tag)?p.filter(t=>t!==tag):[...p,tag]);
+  },[editMode]);
+
+  const fixedContents = activeFixedPresets.map(id=>fixedPresets.find(f=>f.id===id)).filter(Boolean).map(f=>f.content);
+  const allParts = [...selected,...fixedContents,customText].filter(Boolean);
+  const finalPrompt = allParts.join("\uFF0C")+(allParts.length?"\u3002":"");
+  const hasPrompt = finalPrompt && finalPrompt !== "\u3002";
+
+  const copyToClipboard = useCallback(()=>{
+    if(!hasPrompt) return;
+    navigator.clipboard.writeText(finalPrompt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),1800);});
+  },[finalPrompt,hasPrompt]);
+
+  const clearAll=()=>{setSelected([]);setCustomText("");setActiveFixedPresets([]);};
+  const applyPreset=(p)=>{if(editMode)return;setSelected([...p.tags]);setCustomText("");};
+  const toggleFixedPreset=(id)=>{if(editMode)return;setActiveFixedPresets(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);};
+  const saveCustomPreset=()=>{if(!presetName.trim()||selected.length===0)return;setSavedPresets(p=>[...p,{name:presetName.trim(),tags:[...selected]}]);setPresetName("");setShowSaveInput(false);};
+  const removeTag=(tag)=>setSelected(p=>p.filter(t=>t!==tag));
+  const getTagCategory=(tag)=>categories.find(c=>c.tags.includes(tag))||null;
+
+  // Tag CRUD
+  const handleAddTags=(catId)=>{const lines=batchTagText.split("\n").map(s=>s.trim()).filter(Boolean);const single=newTagText.trim();const toAdd=single?[single]:lines;if(!toAdd.length)return;setCategories(p=>p.map(c=>c.id===catId?{...c,tags:[...c.tags,...toAdd.filter(t=>!c.tags.includes(t))]}:c));setNewTagText("");setBatchTagText("");setAddTagModal(null);showToast("\u2713 \u6807\u7B7E\u5DF2\u6DFB\u52A0");};
+  const handleEditTag=()=>{if(!editTagText.trim()||!editTagModal)return;const{catId,index}=editTagModal;const old=categories.find(c=>c.id===catId)?.tags[index];setCategories(p=>p.map(c=>{if(c.id!==catId)return c;const t=[...c.tags];t[index]=editTagText.trim();return{...c,tags:t};}));if(old&&selected.includes(old))setSelected(p=>p.map(t=>t===old?editTagText.trim():t));setEditTagModal(null);setEditTagText("");};
+  const handleDeleteTag=(catId,index)=>{const tag=categories.find(c=>c.id===catId)?.tags[index];setCategories(p=>p.map(c=>{if(c.id!==catId)return c;const t=[...c.tags];t.splice(index,1);return{...c,tags:t};}));if(tag)setSelected(p=>p.filter(t=>t!==tag));};
+
+  // Category CRUD
+  const handleAddCategory=()=>{if(!newCat.label.trim())return;const id="custom_"+Date.now();setCategories(p=>[...p,{id,label:newCat.label.trim(),icon:newCat.icon,color:newCat.color,tags:[]}]);setNewCat({label:"",icon:"🎯",color:"#5BA8C8"});setAddCatModal(false);setActiveCategory(id);showToast("\u2713 \u5206\u7C7B\u5DF2\u521B\u5EFA");};
+  const handleEditCategory=()=>{if(!editCat.label.trim()||!editCatModal)return;setCategories(p=>p.map(c=>c.id===editCatModal.id?{...c,label:editCat.label.trim(),icon:editCat.icon,color:editCat.color}:c));setEditCatModal(null);};
+  const handleDeleteCategory=(catId)=>{const cat=categories.find(c=>c.id===catId);if(cat)setSelected(p=>p.filter(t=>!cat.tags.includes(t)));setCategories(p=>p.filter(c=>c.id!==catId));if(activeCategory===catId)setActiveCategory(null);};
+  const handleResetAll=()=>{if(!confirm("\u786E\u8BA4\u6062\u590D\u4E3A\u9ED8\u8BA4\uFF1F\u6240\u6709\u81EA\u5B9A\u4E49\u5185\u5BB9\u5C06\u4E22\u5931\u3002"))return;setCategories(DEFAULT_CATEGORIES);setSelected([]);setSavedPresets([]);setCustomText("");setFixedPresets(DEFAULT_FIXED_PRESETS);setActiveFixedPresets([]);showToast("\u2713 \u5DF2\u6062\u590D\u9ED8\u8BA4");};
+  const handleDeletePreset=(idx)=>setSavedPresets(p=>{const n=[...p];n.splice(idx,1);return n;});
+  const moveCat=(from,to)=>{setCategories(p=>{const n=[...p];const[item]=n.splice(from,1);n.splice(to,0,item);return n;});};
+
+  // Fixed preset CRUD
+  const handleAddFP=()=>{if(!fpForm.name.trim()||!fpForm.content.trim())return;setFixedPresets(p=>[...p,{id:"fp_"+Date.now(),name:fpForm.name.trim(),content:fpForm.content.trim().slice(0,500)}]);setFpForm({name:"",content:""});setAddFPModal(false);showToast("\u2713 \u56FA\u5B9A\u9884\u8BBE\u5DF2\u521B\u5EFA");};
+  const handleEditFP=()=>{if(!fpForm.name.trim()||!fpForm.content.trim()||!editFPModal)return;setFixedPresets(p=>p.map(f=>f.id===editFPModal.id?{...f,name:fpForm.name.trim(),content:fpForm.content.trim().slice(0,500)}:f));setEditFPModal(null);setFpForm({name:"",content:""});};
+  const handleDeleteFP=(id)=>{setFixedPresets(p=>p.filter(f=>f.id!==id));setActiveFixedPresets(p=>p.filter(x=>x!==id));};
+
+  /* ═══ EXPORT / IMPORT ═══ */
+  const handleExport = () => {
+    const data = {
+      version: 1,
+      exportDate: new Date().toISOString(),
+      categories,
+      savedPresets,
+      fixedPresets,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "\u63D0\u793A\u8BCD\u5DE5\u574A_\u914D\u7F6E_" + new Date().toISOString().slice(0,10) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("\u2713 \u914D\u7F6E\u5DF2\u5BFC\u51FA");
+    setShowSettings(false);
+  };
+
+  const handleImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data.categories || !Array.isArray(data.categories)) {
+          alert("\u6587\u4EF6\u683C\u5F0F\u4E0D\u6B63\u786E\uFF0C\u8BF7\u9009\u62E9\u6B63\u786E\u7684\u914D\u7F6E\u6587\u4EF6\u3002");
+          return;
+        }
+        if (!confirm("\u5BFC\u5165\u5C06\u8986\u76D6\u5F53\u524D\u6240\u6709\u914D\u7F6E\uFF0C\u786E\u8BA4\u7EE7\u7EED\uFF1F")) return;
+        setCategories(data.categories);
+        if (data.savedPresets) setSavedPresets(data.savedPresets);
+        if (data.fixedPresets) setFixedPresets(data.fixedPresets);
+        setSelected([]);
+        setActiveFixedPresets([]);
+        setCustomText("");
+        showToast("\u2713 \u914D\u7F6E\u5DF2\u5BFC\u5165");
+      } catch {
+        alert("\u6587\u4EF6\u89E3\u6790\u5931\u8D25\uFF0C\u8BF7\u786E\u4FDD\u9009\u62E9\u7684\u662F\u6B63\u786E\u7684JSON\u914D\u7F6E\u6587\u4EF6\u3002");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+    setShowSettings(false);
+  };
+
+  const tabStyle=(active)=>({
+    padding:"6px 16px",borderRadius:7,border:"none",fontSize:12,fontWeight:active?600:400,
+    cursor:"pointer",transition:"all 0.2s",fontFamily:"'Space Mono',monospace",
+    background:active?"rgba(255,255,255,0.1)":"transparent",color:active?"#E8E6E1":"#666",
+  });
+
+  // Stats
+  const totalTags = categories.reduce((s,c)=>s+c.tags.length, 0);
+  const totalFP = fixedPresets.length;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0D0D0F",color:"#E8E6E1",fontFamily:"'Noto Sans SC','SF Pro Display',-apple-system,sans-serif",padding:0}}>
+      {/* Hidden file input */}
+      <input type="file" ref={fileInputRef} accept=".json" style={{display:"none"}} onChange={handleImport} />
+
+      {/* Toast */}
+      <Toast message={toast.message} visible={toast.visible} />
+
+      {/* Header */}
+      <div style={{padding:"18px 24px 12px",borderBottom:"1px solid rgba(255,255,255,0.06)",background:"linear-gradient(180deg,rgba(255,255,255,0.03) 0%,transparent 100%)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:36,height:36,borderRadius:9,background:"linear-gradient(135deg,#E8655A,#D4A853,#6B7FD7)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:"#fff",fontFamily:"'Space Mono',monospace"}}>P</div>
+          <div>
+            <h1 style={{margin:0,fontSize:19,fontWeight:700,letterSpacing:"-0.02em",background:"linear-gradient(90deg,#E8E6E1,#A0A0A0)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>AI 视频提示词工坊</h1>
+            <p style={{margin:0,fontSize:10,color:"#555",letterSpacing:"0.08em",fontFamily:"'Space Mono',monospace"}}>PROMPT BUILDER · PWA</p>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {/* Settings dropdown */}
+          <div style={{position:"relative"}}>
+            <button onClick={()=>setShowSettings(s=>!s)} style={{
+              padding:"8px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",
+              background:"rgba(255,255,255,0.04)",color:"#999",fontSize:16,cursor:"pointer",transition:"all 0.2s",
+            }} title="\u8BBE\u7F6E">
+              \u2630
+            </button>
+            {showSettings && (
+              <div style={{
+                position:"absolute",right:0,top:"calc(100% + 8px)",width:220,
+                background:"#1E1E22",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",
+                boxShadow:"0 16px 48px rgba(0,0,0,0.5)",zIndex:100,overflow:"hidden",
+                animation:"fadeIn 0.15s ease",
+              }}>
+                <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                  <div style={{fontSize:11,color:"#666",fontFamily:"'Space Mono',monospace",marginBottom:4}}>DATA</div>
+                  <div style={{fontSize:12,color:"#999"}}>
+                    {totalTags} 标签 · {savedPresets.length} 快速预设 · {totalFP} 固定预设
+                  </div>
+                </div>
+                <button onClick={handleExport} style={{
+                  width:"100%",padding:"12px 16px",border:"none",background:"transparent",
+                  color:"#4A9B7F",fontSize:13,cursor:"pointer",textAlign:"left",
+                  fontFamily:"'Noto Sans SC',sans-serif",display:"flex",alignItems:"center",gap:8,
+                  borderBottom:"1px solid rgba(255,255,255,0.04)",
+                }} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.04)"}
+                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <span>📤</span> 导出配置
+                </button>
+                <button onClick={()=>fileInputRef.current?.click()} style={{
+                  width:"100%",padding:"12px 16px",border:"none",background:"transparent",
+                  color:"#5BA8C8",fontSize:13,cursor:"pointer",textAlign:"left",
+                  fontFamily:"'Noto Sans SC',sans-serif",display:"flex",alignItems:"center",gap:8,
+                }} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.04)"}
+                   onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <span>📥</span> 导入配置
+                </button>
+              </div>
+            )}
+          </div>
+          <button onClick={()=>{setEditMode(m=>!m);setShowSettings(false);}} style={{
+            padding:"8px 16px",borderRadius:8,
+            border:editMode?"1.5px solid #D4A853":"1px solid rgba(255,255,255,0.1)",
+            background:editMode?"rgba(212,168,83,0.12)":"rgba(255,255,255,0.04)",
+            color:editMode?"#D4A853":"#999",fontSize:13,cursor:"pointer",
+            fontWeight:editMode?600:400,fontFamily:"'Noto Sans SC',sans-serif",transition:"all 0.2s",
+          }}>{editMode?"\u2713 完成编辑":"\u2699 编辑模式"}</button>
+        </div>
+      </div>
+
+      {/* Click outside to close settings */}
+      {showSettings && <div onClick={()=>setShowSettings(false)} style={{position:"fixed",inset:0,zIndex:50}} />}
+
+      <div style={{display:"flex",height:"calc(100vh - 72px)"}}>
+        {/* ═══ Left ═══ */}
+        <div style={{flex:"1 1 58%",overflowY:"auto",padding:"14px 20px",borderRight:"1px solid rgba(255,255,255,0.06)"}}>
+          {editMode&&(
+            <div style={{padding:"10px 14px",borderRadius:10,marginBottom:12,background:"rgba(212,168,83,0.08)",border:"1px solid rgba(212,168,83,0.2)",fontSize:13,color:"#D4A853",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <span style={{fontSize:16}}>🛠</span>
+              <span>编辑模式 — 可增删改标签、分类与固定预设</span>
+              <button onClick={handleResetAll} style={{marginLeft:"auto",padding:"4px 12px",borderRadius:6,border:"1px solid rgba(232,101,90,0.3)",background:"rgba(232,101,90,0.1)",color:"#E8655A",fontSize:11,cursor:"pointer",fontFamily:"'Noto Sans SC',sans-serif"}}>恢复默认</button>
+            </div>
+          )}
+
+          {/* Preset tabs */}
+          <div style={{marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
+              <div style={{display:"flex",background:"rgba(255,255,255,0.04)",borderRadius:8,padding:2}}>
+                <button onClick={()=>setPresetTab("quick")} style={tabStyle(presetTab==="quick")}>⚡ 快速预设</button>
+                <button onClick={()=>setPresetTab("fixed")} style={tabStyle(presetTab==="fixed")}>📌 固定预设</button>
+              </div>
+              {presetTab==="fixed"&&activeFixedPresets.length>0&&(
+                <span style={{fontSize:11,color:"#5BA8C8",fontFamily:"'Space Mono',monospace"}}>{activeFixedPresets.length} active</span>
+              )}
+            </div>
+
+            {presetTab==="quick"&&(
+              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                {[...PRESETS,...savedPresets].map((p,i)=>(
+                  <div key={i} style={{position:"relative",display:"inline-flex"}}>
+                    <button onClick={()=>applyPreset(p)} style={{
+                      padding:"7px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",
+                      color:"#ccc",fontSize:13,cursor:editMode?"default":"pointer",fontFamily:"'Noto Sans SC',sans-serif",
+                      transition:"all 0.2s",opacity:editMode?0.6:1,paddingRight:editMode&&i>=PRESETS.length?30:14,
+                    }}>
+                      {i>=PRESETS.length&&<span style={{color:"#D4A853",marginRight:4}}>★</span>}
+                      {p.name}
+                    </button>
+                    {editMode&&i>=PRESETS.length&&(
+                      <button onClick={()=>handleDeletePreset(i-PRESETS.length)} style={{
+                        position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",
+                        width:20,height:20,borderRadius:10,border:"none",background:"rgba(232,101,90,0.25)",
+                        color:"#E8655A",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+                      }}>×</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {presetTab==="fixed"&&(
+              <div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                  {fixedPresets.map(fp=>{
+                    const isActive=activeFixedPresets.includes(fp.id);
+                    return (
+                      <div key={fp.id} style={{position:"relative",display:"inline-flex"}}
+                        onMouseEnter={()=>!editMode&&setHoveredFP(fp.id)} onMouseLeave={()=>setHoveredFP(null)}>
+                        {hoveredFP===fp.id&&!editMode&&(
+                          <div style={{
+                            position:"absolute",bottom:"calc(100% + 10px)",left:"50%",transform:"translateX(-50%)",
+                            width:300,maxHeight:160,overflowY:"auto",padding:"12px 14px",borderRadius:10,
+                            background:"#252528",border:"1px solid rgba(255,255,255,0.12)",
+                            boxShadow:"0 12px 40px rgba(0,0,0,0.5)",fontSize:12,lineHeight:1.7,color:"#bbb",
+                            zIndex:100,pointerEvents:"none",fontFamily:"'Noto Sans SC',sans-serif",animation:"fadeIn 0.15s ease",
+                          }}>
+                            <div style={{fontSize:10,color:"#666",marginBottom:4,fontFamily:"'Space Mono',monospace"}}>PREVIEW</div>
+                            {fp.content.length>150?fp.content.slice(0,150)+"...":fp.content}
+                          </div>
+                        )}
+                        <button onClick={()=>editMode?(setEditFPModal(fp),setFpForm({name:fp.name,content:fp.content})):toggleFixedPreset(fp.id)} style={{
+                          padding:"7px 14px",borderRadius:8,
+                          border:isActive&&!editMode?"1.5px solid #5BA8C8":"1px solid rgba(255,255,255,0.1)",
+                          background:isActive&&!editMode?"rgba(91,168,200,0.12)":"rgba(255,255,255,0.04)",
+                          color:isActive&&!editMode?"#5BA8C8":"#ccc",
+                          fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans SC',sans-serif",
+                          transition:"all 0.2s",fontWeight:isActive&&!editMode?600:400,
+                          paddingRight:editMode?52:14,
+                        }}>
+                          <span style={{marginRight:6}}>{isActive&&!editMode?"\u2713":"📌"}</span>
+                          {fp.name}
+                        </button>
+                        {editMode&&(
+                          <div style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",display:"flex",gap:3}}>
+                            <button onClick={()=>{setEditFPModal(fp);setFpForm({name:fp.name,content:fp.content});}} style={{width:20,height:20,borderRadius:6,border:"none",background:"rgba(255,255,255,0.08)",color:"#999",fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✎</button>
+                            <button onClick={()=>{if(confirm("\u5220\u9664\u300C"+fp.name+"\u300D?"))handleDeleteFP(fp.id);}} style={{width:20,height:20,borderRadius:6,border:"none",background:"rgba(232,101,90,0.25)",color:"#E8655A",fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <button onClick={()=>{setAddFPModal(true);setFpForm({name:"",content:""});}} style={{
+                    padding:"7px 16px",borderRadius:8,border:"1.5px dashed rgba(91,168,200,0.4)",
+                    background:"transparent",color:"#5BA8C8",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans SC',sans-serif",
+                  }}>+ 新增固定预设</button>
+                </div>
+                {activeFixedPresets.length>0&&!editMode&&(
+                  <div style={{marginTop:10}}>
+                    {activeFixedPresets.map(id=>{
+                      const fp=fixedPresets.find(f=>f.id===id);if(!fp)return null;
+                      return (
+                        <div key={id} style={{padding:"10px 14px",borderRadius:8,marginBottom:6,background:"rgba(91,168,200,0.06)",border:"1px solid rgba(91,168,200,0.15)",fontSize:12,lineHeight:1.7,color:"#aaa",position:"relative"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                            <span style={{fontSize:11,fontWeight:600,color:"#5BA8C8"}}>📌 {fp.name}</span>
+                            <button onClick={()=>toggleFixedPreset(id)} style={{border:"none",background:"transparent",color:"#666",fontSize:14,cursor:"pointer",lineHeight:1}}>×</button>
+                          </div>
+                          <div style={{maxHeight:54,overflow:"hidden",maskImage:"linear-gradient(to bottom, black 60%, transparent 100%)",WebkitMaskImage:"linear-gradient(to bottom, black 60%, transparent 100%)"}}>{fp.content}</div>
+                          <button onClick={()=>setFpViewModal(fp)} style={{border:"none",background:"transparent",color:"#5BA8C8",fontSize:11,cursor:"pointer",padding:0,marginTop:4,fontFamily:"'Noto Sans SC',sans-serif"}}>查看完整内容 →</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Categories */}
+          {categories.map((cat,catIdx)=>{
+            const isOpen=activeCategory===cat.id;
+            const selectedInCat=cat.tags.filter(t=>selected.includes(t)).length;
+            return (
+              <div key={cat.id} style={{marginBottom:4}}>
+                <div style={{display:"flex",alignItems:"center"}}>
+                  {editMode&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:0,marginRight:4}}>
+                      <button disabled={catIdx===0} onClick={()=>moveCat(catIdx,catIdx-1)} style={{width:20,height:16,border:"none",background:"transparent",color:catIdx===0?"#333":"#777",cursor:catIdx===0?"default":"pointer",fontSize:10,padding:0,lineHeight:1}}>▲</button>
+                      <button disabled={catIdx===categories.length-1} onClick={()=>moveCat(catIdx,catIdx+1)} style={{width:20,height:16,border:"none",background:"transparent",color:catIdx===categories.length-1?"#333":"#777",cursor:catIdx===categories.length-1?"default":"pointer",fontSize:10,padding:0,lineHeight:1}}>▼</button>
+                    </div>
+                  )}
+                  <button onClick={()=>setActiveCategory(isOpen?null:cat.id)} style={{
+                    flex:1,display:"flex",alignItems:"center",justifyContent:"space-between",
+                    padding:"11px 14px",borderRadius:10,border:"none",cursor:"pointer",
+                    background:isOpen?"rgba(255,255,255,0.06)":"transparent",transition:"all 0.2s",fontFamily:"'Noto Sans SC',sans-serif",
+                  }}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <span style={{fontSize:17}}>{cat.icon}</span>
+                      <span style={{fontSize:14,fontWeight:500,color:"#E8E6E1"}}>{cat.label}</span>
+                      <span style={{fontSize:11,color:"#555",fontFamily:"'Space Mono',monospace"}}>{cat.tags.length}</span>
+                      {selectedInCat>0&&!editMode&&(
+                        <span style={{background:cat.color,color:"#fff",fontSize:11,fontWeight:700,borderRadius:10,padding:"1px 8px",fontFamily:"'Space Mono',monospace"}}>{selectedInCat}</span>
+                      )}
+                    </div>
+                    <span style={{color:"#555",fontSize:16,transition:"transform 0.25s",transform:isOpen?"rotate(90deg)":"rotate(0deg)"}}>›</span>
+                  </button>
+                  {editMode&&(
+                    <div style={{display:"flex",gap:4,paddingRight:4}}>
+                      <button onClick={()=>{setEditCatModal(cat);setEditCat({label:cat.label,icon:cat.icon,color:cat.color});}} style={{width:28,height:28,borderRadius:7,border:"none",background:"rgba(255,255,255,0.06)",color:"#999",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✎</button>
+                      <button onClick={()=>{if(confirm("\u5220\u9664\u300C"+cat.label+"\u300D?"))handleDeleteCategory(cat.id);}} style={{width:28,height:28,borderRadius:7,border:"none",background:"rgba(232,101,90,0.1)",color:"#E8655A",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                    </div>
+                  )}
+                </div>
+                {isOpen&&(
+                  <div style={{padding:"10px 14px 14px",display:"flex",flexWrap:"wrap",gap:8,animation:"fadeIn 0.2s ease"}}>
+                    {cat.tags.map((tag,idx)=>{
+                      const isSel=selected.includes(tag);
+                      return (
+                        <div key={tag+idx} style={{position:"relative",display:"inline-flex"}}>
+                          <button onClick={()=>editMode?(setEditTagModal({catId:cat.id,index:idx,value:tag}),setEditTagText(tag)):toggleTag(tag)}
+                            style={{
+                              padding:"6px 14px",borderRadius:20,
+                              border:"1.5px solid "+(isSel&&!editMode?cat.color:"rgba(255,255,255,0.1)"),
+                              background:isSel&&!editMode?cat.color+"22":"transparent",
+                              color:isSel&&!editMode?cat.color:editMode?"#bbb":"#999",
+                              fontSize:13,cursor:"pointer",transition:"all 0.2s",
+                              fontWeight:isSel&&!editMode?500:400,fontFamily:"'Noto Sans SC',sans-serif",
+                              paddingRight:editMode?28:14,
+                            }}>
+                            {isSel&&!editMode&&<span style={{marginRight:4}}>✓</span>}
+                            {editMode&&<span style={{marginRight:4,opacity:0.4,fontSize:11}}>✎</span>}
+                            {tag}
+                          </button>
+                          {editMode&&(
+                            <button onClick={e=>{e.stopPropagation();handleDeleteTag(cat.id,idx);}} style={{
+                              position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",
+                              width:18,height:18,borderRadius:9,border:"none",background:"rgba(232,101,90,0.3)",
+                              color:"#E8655A",fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,
+                            }}>×</button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {editMode&&(
+                      <button onClick={()=>{setAddTagModal(cat.id);setNewTagText("");setBatchTagText("");}} style={{
+                        padding:"6px 16px",borderRadius:20,border:"1.5px dashed "+cat.color+"66",
+                        background:"transparent",color:cat.color,fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans SC',sans-serif",
+                      }}>+ 添加标签</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {editMode&&(
+            <button onClick={()=>{setAddCatModal(true);setNewCat({label:"",icon:"🎯",color:"#5BA8C8"});}} style={{
+              width:"100%",padding:"14px",marginTop:8,borderRadius:12,border:"1.5px dashed rgba(255,255,255,0.12)",
+              background:"transparent",color:"#888",fontSize:14,cursor:"pointer",fontFamily:"'Noto Sans SC',sans-serif",
+            }}>+ 新增分类</button>
+          )}
+        </div>
+
+        {/* ═══ Right ═══ */}
+        <div style={{flex:"1 1 42%",display:"flex",flexDirection:"column",padding:"14px 20px",overflowY:"auto"}}>
+          <div style={{fontSize:11,fontWeight:500,color:"#555",letterSpacing:"0.1em",marginBottom:8,fontFamily:"'Space Mono',monospace"}}>
+            📋 已选内容 SELECTED
+            <span style={{marginLeft:8}}>{selected.length} 标签</span>
+            {activeFixedPresets.length>0&&<span style={{marginLeft:6,color:"#5BA8C8"}}>{activeFixedPresets.length} 固定预设</span>}
+          </div>
+
+          {selected.length===0&&activeFixedPresets.length===0?(
+            <div style={{padding:"24px 20px",borderRadius:12,border:"1px dashed rgba(255,255,255,0.08)",textAlign:"center",color:"#444",fontSize:13,marginBottom:12}}>从左侧选择标签或固定预设来构建提示词</div>
+          ):(
+            <div style={{marginBottom:12}}>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:activeFixedPresets.length>0?8:0}}>
+                {selected.map(tag=>{
+                  const cat=getTagCategory(tag);
+                  return (
+                    <span key={tag} onClick={()=>removeTag(tag)} style={{
+                      display:"inline-flex",alignItems:"center",gap:5,padding:"5px 10px 5px 12px",borderRadius:16,
+                      background:cat?cat.color+"18":"rgba(255,255,255,0.06)",border:"1px solid "+(cat?cat.color+"44":"rgba(255,255,255,0.1)"),
+                      color:cat?cat.color:"#ccc",fontSize:12,cursor:"pointer",transition:"all 0.2s",fontFamily:"'Noto Sans SC',sans-serif",
+                    }}>
+                      {tag}<span style={{fontSize:14,opacity:0.6,marginLeft:2,lineHeight:1}}>×</span>
+                    </span>
+                  );
+                })}
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {activeFixedPresets.map(id=>{
+                  const fp=fixedPresets.find(f=>f.id===id);if(!fp)return null;
+                  return (
+                    <span key={id} onClick={()=>toggleFixedPreset(id)} style={{
+                      display:"inline-flex",alignItems:"center",gap:5,padding:"5px 10px 5px 12px",borderRadius:16,
+                      background:"rgba(91,168,200,0.12)",border:"1px solid rgba(91,168,200,0.3)",
+                      color:"#5BA8C8",fontSize:12,cursor:"pointer",fontFamily:"'Noto Sans SC',sans-serif",
+                    }}>
+                      📌 {fp.name}<span style={{fontSize:14,opacity:0.6,marginLeft:2,lineHeight:1}}>×</span>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div style={{fontSize:11,fontWeight:500,color:"#555",letterSpacing:"0.1em",marginBottom:6,fontFamily:"'Space Mono',monospace"}}>✏️ 自定义补充 CUSTOM</div>
+          <textarea value={customText} onChange={e=>setCustomText(e.target.value)} placeholder="添加自定义描述..."
+            style={{width:"100%",minHeight:52,padding:"12px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",color:"#ccc",fontSize:13,resize:"vertical",outline:"none",fontFamily:"'Noto Sans SC',sans-serif",lineHeight:1.7,boxSizing:"border-box"}} />
+
+          <div style={{fontSize:11,fontWeight:500,color:"#555",letterSpacing:"0.1em",marginTop:14,marginBottom:6,fontFamily:"'Space Mono',monospace"}}>🎯 生成结果 OUTPUT</div>
+          <div style={{
+            padding:"14px 16px",borderRadius:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",
+            minHeight:80,maxHeight:240,overflowY:"auto",fontSize:14,lineHeight:1.8,
+            color:hasPrompt?"#E8E6E1":"#444",fontFamily:"'Noto Sans SC',sans-serif",wordBreak:"break-word",
+          }}>
+            {hasPrompt?finalPrompt:"提示词将在这里生成..."}
+          </div>
+          {hasPrompt&&(
+            <div style={{fontSize:11,color:"#555",marginTop:4,textAlign:"right",fontFamily:"'Space Mono',monospace"}}>{finalPrompt.length} chars</div>
+          )}
+
+          <div style={{display:"flex",gap:10,marginTop:10}}>
+            <button onClick={copyToClipboard} disabled={!hasPrompt} style={{
+              flex:1,padding:"11px 0",borderRadius:10,border:"none",
+              cursor:hasPrompt?"pointer":"not-allowed",
+              background:copied?"linear-gradient(135deg,#4A9B7F,#3A8B6F)":"linear-gradient(135deg,#E8655A,#D4A853)",
+              color:"#fff",fontSize:14,fontWeight:600,transition:"all 0.3s",
+              opacity:hasPrompt?1:0.3,fontFamily:"'Noto Sans SC',sans-serif",
+            }}>{copied?"\u2713 已复制!":"📋 复制提示词"}</button>
+            <button onClick={clearAll} style={{...btnG,padding:"11px 20px"}}>清空</button>
+          </div>
+
+          {selected.length>0&&!editMode&&(
+            <div style={{marginTop:10}}>
+              {!showSaveInput?(
+                <button onClick={()=>setShowSaveInput(true)} style={{width:"100%",padding:"10px",borderRadius:10,border:"1px dashed rgba(255,255,255,0.1)",background:"transparent",color:"#666",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans SC',sans-serif"}}>★ 保存为快速预设</button>
+              ):(
+                <div style={{display:"flex",gap:8}}>
+                  <input autoFocus value={presetName} onChange={e=>setPresetName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveCustomPreset()} placeholder="预设名称..." style={{...inp,flex:1}} />
+                  <button onClick={saveCustomPreset} style={btnP("#D4A853")}>保存</button>
+                  <button onClick={()=>{setShowSaveInput(false);setPresetName("");}} style={btnG}>取消</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{marginTop:16,padding:"10px 14px",borderRadius:10,background:"rgba(107,127,215,0.06)",border:"1px solid rgba(107,127,215,0.12)",fontSize:12,color:"#7888C8",lineHeight:1.8,fontFamily:"'Noto Sans SC',sans-serif"}}>
+            💡 <b>提示：</b>点击右上角 ☰ 可导出/导入配置文件，换设备时一键恢复所有自定义内容。数据自动保存在本地浏览器中。
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ MODALS ═══ */}
+      <Modal open={addFPModal} onClose={()=>setAddFPModal(false)} title="新增固定预设" width={520}>
+        <div style={{marginBottom:16}}><label style={lbl}>预设名称</label><input value={fpForm.name} onChange={e=>setFpForm(p=>({...p,name:e.target.value}))} placeholder="如：3D CGI 写实风格" style={inp} autoFocus /></div>
+        <div style={{marginBottom:8}}><label style={lbl}>预设内容（500字以内）</label>
+          <textarea value={fpForm.content} onChange={e=>setFpForm(p=>({...p,content:e.target.value.slice(0,500)}))} placeholder={"输入固定的长文本描述内容...\n\n例如：建模与渲染引擎：采用高精度的3D CGI渲染技术..."} rows={10} style={{...inp,resize:"vertical",lineHeight:1.7}} />
+          <div style={{fontSize:11,color:fpForm.content.length>=480?"#E8655A":"#555",textAlign:"right",marginTop:4,fontFamily:"'Space Mono',monospace"}}>{fpForm.content.length}/500</div>
+        </div>
+        <button onClick={handleAddFP} disabled={!fpForm.name.trim()||!fpForm.content.trim()} style={{...btnP("#5BA8C8"),width:"100%",opacity:fpForm.name.trim()&&fpForm.content.trim()?1:0.4,cursor:fpForm.name.trim()&&fpForm.content.trim()?"pointer":"not-allowed"}}>创建固定预设</button>
+      </Modal>
+
+      <Modal open={!!editFPModal} onClose={()=>setEditFPModal(null)} title="编辑固定预设" width={520}>
+        <div style={{marginBottom:16}}><label style={lbl}>预设名称</label><input value={fpForm.name} onChange={e=>setFpForm(p=>({...p,name:e.target.value}))} style={inp} autoFocus /></div>
+        <div style={{marginBottom:8}}><label style={lbl}>预设内容（500字以内）</label>
+          <textarea value={fpForm.content} onChange={e=>setFpForm(p=>({...p,content:e.target.value.slice(0,500)}))} rows={10} style={{...inp,resize:"vertical",lineHeight:1.7}} />
+          <div style={{fontSize:11,color:fpForm.content.length>=480?"#E8655A":"#555",textAlign:"right",marginTop:4,fontFamily:"'Space Mono',monospace"}}>{fpForm.content.length}/500</div>
+        </div>
+        <button onClick={handleEditFP} style={{...btnP("#5BA8C8"),width:"100%"}}>保存修改</button>
+      </Modal>
+
+      <Modal open={!!fpViewModal} onClose={()=>setFpViewModal(null)} title={fpViewModal?"📌 "+fpViewModal.name:""} width={520}>
+        <div style={{padding:"16px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",fontSize:13,lineHeight:1.9,color:"#ccc",fontFamily:"'Noto Sans SC',sans-serif",whiteSpace:"pre-wrap"}}>{fpViewModal?.content}</div>
+        <div style={{display:"flex",gap:8,marginTop:16}}>
+          <button onClick={()=>{navigator.clipboard.writeText(fpViewModal?.content||"");setFpViewModal(null);showToast("\u2713 \u5185\u5BB9\u5DF2\u590D\u5236");}} style={{...btnP("#5BA8C8"),flex:1}}>📋 复制内容</button>
+          <button onClick={()=>setFpViewModal(null)} style={btnG}>关闭</button>
+        </div>
+      </Modal>
+
+      <Modal open={!!addTagModal} onClose={()=>setAddTagModal(null)} title="添加标签">
+        <div style={{marginBottom:16}}><label style={lbl}>单个添加</label>
+          <div style={{display:"flex",gap:8}}>
+            <input value={newTagText} onChange={e=>setNewTagText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAddTags(addTagModal)} placeholder="输入标签内容..." style={{...inp,flex:1}} autoFocus />
+            <button onClick={()=>handleAddTags(addTagModal)} style={btnP(categories.find(c=>c.id===addTagModal)?.color)}>添加</button>
+          </div>
+        </div>
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:16}}><label style={lbl}>批量添加（每行一个标签）</label>
+          <textarea value={batchTagText} onChange={e=>setBatchTagText(e.target.value)} placeholder={"标签一\n标签二\n标签三"} rows={5} style={{...inp,resize:"vertical",lineHeight:1.7}} />
+          <button onClick={()=>handleAddTags(addTagModal)} style={{...btnP(categories.find(c=>c.id===addTagModal)?.color),width:"100%",marginTop:10}}>批量添加</button>
+        </div>
+      </Modal>
+
+      <Modal open={!!editTagModal} onClose={()=>setEditTagModal(null)} title="编辑标签">
+        <div style={{display:"flex",gap:8}}>
+          <input value={editTagText} onChange={e=>setEditTagText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleEditTag()} style={{...inp,flex:1}} autoFocus />
+          <button onClick={handleEditTag} style={btnP()}>保存</button>
+        </div>
+      </Modal>
+
+      <Modal open={addCatModal} onClose={()=>setAddCatModal(false)} title="新增分类">
+        <div style={{marginBottom:16}}><label style={lbl}>分类名称</label><input value={newCat.label} onChange={e=>setNewCat(p=>({...p,label:e.target.value}))} placeholder="如：音效描述" style={inp} autoFocus /></div>
+        <div style={{marginBottom:16}}><label style={lbl}>选择图标</label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {ICON_OPTIONS.map(ic=>(<button key={ic} onClick={()=>setNewCat(p=>({...p,icon:ic}))} style={{width:38,height:38,borderRadius:8,border:newCat.icon===ic?"2px solid #D4A853":"1px solid rgba(255,255,255,0.1)",background:newCat.icon===ic?"rgba(212,168,83,0.15)":"rgba(255,255,255,0.03)",fontSize:18,cursor:"pointer"}}>{ic}</button>))}
+          </div>
+        </div>
+        <div style={{marginBottom:20}}><label style={lbl}>选择颜色</label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {COLOR_OPTIONS.map(c=>(<button key={c} onClick={()=>setNewCat(p=>({...p,color:c}))} style={{width:32,height:32,borderRadius:8,border:newCat.color===c?"2.5px solid #fff":"2px solid transparent",background:c,cursor:"pointer"}} />))}
+          </div>
+        </div>
+        <button onClick={handleAddCategory} style={{...btnP(newCat.color),width:"100%"}}>创建分类</button>
+      </Modal>
+
+      <Modal open={!!editCatModal} onClose={()=>setEditCatModal(null)} title="编辑分类">
+        <div style={{marginBottom:16}}><label style={lbl}>分类名称</label><input value={editCat.label} onChange={e=>setEditCat(p=>({...p,label:e.target.value}))} style={inp} autoFocus /></div>
+        <div style={{marginBottom:16}}><label style={lbl}>选择图标</label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {ICON_OPTIONS.map(ic=>(<button key={ic} onClick={()=>setEditCat(p=>({...p,icon:ic}))} style={{width:38,height:38,borderRadius:8,border:editCat.icon===ic?"2px solid #D4A853":"1px solid rgba(255,255,255,0.1)",background:editCat.icon===ic?"rgba(212,168,83,0.15)":"rgba(255,255,255,0.03)",fontSize:18,cursor:"pointer"}}>{ic}</button>))}
+          </div>
+        </div>
+        <div style={{marginBottom:20}}><label style={lbl}>选择颜色</label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {COLOR_OPTIONS.map(c=>(<button key={c} onClick={()=>setEditCat(p=>({...p,color:c}))} style={{width:32,height:32,borderRadius:8,border:editCat.color===c?"2.5px solid #fff":"2px solid transparent",background:c,cursor:"pointer"}} />))}
+          </div>
+        </div>
+        <button onClick={handleEditCategory} style={{...btnP(editCat.color),width:"100%"}}>保存修改</button>
+      </Modal>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<PromptBuilder />);
+</script>
+<script>
+// Register Service Worker for PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      console.log('SW registered:', reg.scope);
+    }).catch(err => {
+      console.log('SW registration failed:', err);
+    });
+  });
+}
+</script>
+</body>
+</html>
